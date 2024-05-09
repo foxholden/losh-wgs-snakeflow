@@ -1,4 +1,5 @@
-cluster:
+executor: cluster-generic
+cluster-generic-submit-cmd:
   mkdir -p results/slurm_logs/{rule} &&
   sbatch
     --partition=amilan,csu
@@ -17,44 +18,52 @@ restart-times: 0
 max-jobs-per-second: 10
 max-status-checks-per-second: 50
 local-cores: 1
-latency-wait: 60
+latency-wait: 120
 cores: 2400
-jobs: 950
+jobs: 450
 keep-going: True
 rerun-incomplete: True
 printshellcmds: True
 use-conda: True
 rerun-trigger: mtime
-cluster-status: status-sacct-robust.sh
-cluster-cancel: scancel
-cluster-cancel-nargs: 4000
+cluster-generic-status-cmd: status-sacct-robust.sh
+cluster-generic-cancel-cmd: scancel
+cluster-generic-cancel-nargs: 4000
 
 
 set-threads:
-  map_reads: 4
+  map_reads: 10
   realigner_target_creator: 4
-  genomics_db_import_chromosomes: 2
-  genomics_db_import_scaffold_groups: 2
-  genomics_db2vcf_scattered: 2
+  genomics_db_import_chromosomes: 16
+  genomics_db_import_scaffold_groups: 10
+  genomics_db2vcf_scattered: 10
+  mark_duplicates: 30
+  make_gvcf_sections: 24
+  clip_overlaps: 24
+  
 set-resources:
   map_reads:
-    mem_mb: 14960
-    time: "23:59:59"
+    mem_mb: 37400
+    time: "'23:59:59'"
   make_gvcf_sections:
-    mem_mb: 3600
-    time: "23:59:59"
+    mem_mb: 89760
+    time: "'23:59:59'"
   genomics_db_import_chromosomes:
-    mem_mb: 7480
-    time: "23:59:59"
+    mem_mb: 59840
+    time: "'23:59:59'"
   genomics_db_import_scaffold_groups:
-    mem_mb: 11000
-    time: "23:59:59"
+    mem_mb: 37400
+    time: "'23:59:59'"
   genomics_db2vcf_scattered:
-    mem_mb: 11000
-    time: "23:59:59"
+    mem_mb: 37400
+    time: "'23:59:59'"
   multiqc_dir:
     mem_mb: 37000
   bwa_index:
     mem_mb: 37000
   realigner_target_creator:
     mem_mb: 14960
+  mark_duplicates:
+    mem_mb: 112200
+  clip_overlaps:
+    mem_mb: 89760
