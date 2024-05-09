@@ -42,7 +42,7 @@ rule thin_bam:
         dps="results/bqsr-round-{bqsr_round}/DS_control/sample_info.tsv"
     output:
         bam="results/bqsr-round-{bqsr_round}/downsample-{cov}X/overlap_clipped/{sample}.bam",
-        bai="results/bqsr-round-{bqsr_round}/downsample-{cov}X/overlap_clipped/{sample}.bam.bai"
+        bai="results/bqsr-round-{bqsr_round}/downsample-{cov}X/overlap_clipped/{sample}.bai"
     log:
         "results/bqsr-round-{bqsr_round}/downsample-{cov}X/logs/thin_bams/{sample}.log"
     benchmark:
@@ -57,7 +57,7 @@ rule thin_bam:
         "     ln  {input.bai} {output.bai}; " 
         " else "
         "     samtools view --subsample $OPT --subsample-seed 1  -b {input.bam} > {output.bam}; "
-        "     samtools index {output.bam}; "
+        "     samtools index -o {output.bai} {output.bam}; "
         " fi "
         " ) 2> {log} "
 
