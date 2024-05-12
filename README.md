@@ -4,11 +4,10 @@ Welcome to Holden's repository for processing Loggerhead Shrike (Lanius ludovici
 ## Snakemake Pipeline
 The snakemake pipeline is adapted from eriq's mega-non-model-wgs-snakeflow that has been tooled for specific use on BGP shrike data. Compare the two repositories right here: https://github.com/eriqande/mega-non-model-wgs-snakeflow/compare/main...foxholden:mega-non-model-wgs-snakeflow:LOSH-Apr-24
 
-## Filter SNPS and Missing Data
-Post-vcf filtering is done with vcftools on Alpine using this script:
-
 ## Remove Related Individuals
-Relatedness is measured using ngsRelate on Alpine using this script:
+Relatedness is measured using ngsRelate on Alpine using this [script](1.ngsRelate-vcf.sbatch)
+## Filter SNPS and Missing Data
+Post-vcf filtering is done with vcftools on Alpine using this [script](2.filtersnps-missing.sbatch)
 
 ## Population Structure
 A genomic PCA is made using Plink v. 1.9
