@@ -1,0 +1,116 @@
+---
+title: "plink_pca"
+author: "Holden"
+date: "2024-02-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Necessary Libraries
+
+```{r}
+# Load Tidyverse
+library(tidyverse)
+```
+
+## Input files
+
+```{r cars}
+#individual names
+inds <- read.delim("~/Desktop/R_Proj/shrike-gen/data/LOSH.5x.ind", header = FALSE, sep = " ") %>% 
+  rename (s = V1)
+#meta
+meta <- read.csv("~/Desktop/R_Proj/shrike-gen/meta/LOSH_Lib_Master.csv") %>% 
+  #trim excess
+  filter (FullLibraryName != "NOT INCLUDED") %>% 
+  select(-c(Picogreen_ng_ul, BandQuality, ReRunPlateName, ReRunPlatePosition)) %>% 
+  #Define site and population
+  mutate(Region_site=paste(State, Lat, Long, sep="_"), Region_pop=State)
+```
+
+## Remove non-breeders form ind file
+
+```{r}
+#remove nonbreeders
+nonbreeder_meta <- read.csv("../meta/losh_master_030724.csv") %>% 
+  filter(FullLibraryName == "NOT INCLUDED"| Stage == 'N'| State == "WV")
+
+breeder_meta <- read.csv("../meta/losh_master_030724.csv") %>% 
+  filter(FullLibraryName != "NOT INCLUDED") %>% 
+  filter(Stage != 'N') %>% 
+  filter(State != "WV") %>% 
+  filter(Stage != "")
+
+`%notin%` <- Negate(`%in%`)
+
+breeder_meta %>% filter(BGP_ID %notin% breeder_ind$V1)
+
+nonbreeders <- nonbreeder_meta[, 1]
+
+breeder_ind <- read.delim("../meta/all_inds.txt", header = FALSE, sep = " ") %>% 
+  filter(!(V1 %in% nonbreeders))
+
+writeLines(apply(breeder_ind, 1, paste, collapse = ""), "breeders_only.ind")
+```
+
+## Input plink
+
+```{r}
+plink_pca <- read.delim("../data/LOSH_5x_merged_hfilt_dp0miss_breeder_5miss.eigenvec", sep = "\t") %>%
+  rename(BGP_ID=IID) %>% 
+  left_join(meta) %>%
+  mutate(
+    Region_pop = State,
+    Region_pop = ifelse(State == "TX" & substr(Long, 1, 4) == "-96.", "TX(gulf)", 
+                        ifelse(State == "TX", "TX(inland)", Region_pop))
+  )
+```
+
+## Design
+
+```{r}
+# Define the levels for the Region_pop factor variable
+factor.levels <- c("Alberta", "MT", "Saskatchewan", "ND", "SD", "Manitoba", "Ontario", 
+                   "AR", "KS", "NE", "KY", "IL", "TN",
+                   "AL", "FL", "NC", "SC", 
+                   "TX(gulf)", "LA", "MS", 
+                   "AZ", "TX(inland)", "OK")
+
+# Convert Region_pop to a factor variable with defined levels
+plink_pca$Region_pop <- factor(x = plink_pca$Region_pop,
+                         levels = factor.levels)
+
+plink_pca
+
+# Load the RColorBrewer library for color palettes
+library(RColorBrewer)
+
+# Define color palettes for different regions
+West.cols <- brewer.pal(n = 9, name = "Blues")[2:8]      # Blue shades for Western states
+Central.cols <- brewer.pal(n = 9, name = "Greens")[3:8]   # Green shades for Central states
+SE.cols <- brewer.pal(n = 9, name = "Purples")[c(2,4,5,6,7)]  # Purple shades for Southeastern states
+TX.cols <- brewer.pal(n = 9, name = "Reds")[c(2,4,6)]     # Red shades for Texas
+SW.cols <- brewer.pal(n = 9, name = "Greys")[3:5]         # Grey shades for Southwest states
+
+# Combine all defined colors into a single vector for PCA plotting
+pca.color <- c(West.cols, Central.cols, SE.cols, TX.cols, SW.cols)
+```
+
+##
+
+```{r}
+plink_pca %>% 
+  ggplot(aes(PC1, PC2, color = Region_pop)) +
+  geom_point(size = 2) +
+  scale_colour_manual(values = pca.color) + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        aspect.ratio = 0.75, 
+        legend.key.size = unit(0.1, "cm")) 
+```
+
+

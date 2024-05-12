@@ -1,0 +1,274 @@
+---
+title: "Prepping the configs for LOSH"
+output: html_notebook
+---
+
+You will want to place the prepped config.yaml, units.tsv, chromosomes.tsv, scaffold_groups.tsv, and scatters_5000000.tsv file in:
+
+```
+/scratch/alpine/foxhol@colostate.edu/LOSH/mega-non-model-wgs-snakeflow/example-configs/LOSH-Apr-24/
+```
+
+Start by navigating to the directory with your fastqs. Then print the full paths to those fastqs and give to a file called full-paths-to-fastqs.txt
+```sh
+cd data/fastqs
+pwd
+find /scratch/alpine/foxhol@colostate.edu/LOSH/mega-non-model-wgs-snakeflow/data/fastqs -type f > full-paths-to-fastqs.txt
+```
+Now in R, do some tranformations
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+
+files <- read_table("full-paths-to-fastqs.txt", col_names = FALSE) %>%
+  select(X9, X5) %>%
+  mutate(kb = X5/1000) %>%
+  rename(fq = X9) %>%
+  select(fq, kb) %>%
+  mutate(base = basename(fq)) %>%
+  mutate(
+    sample_id = case_when(
+      str_detect(base, "\\.fq\\.gz") ~ str_match(base, "^s(.*)_[12]\\.fq\\.gz")[,2],
+      str_detect(base, "\\.fastq\\.gz") ~ str_match(base, "^(.*)_S[0-9]+.*\\.fastq\\.gz")[,2],
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  mutate(
+    read = case_when(
+      str_detect(base, "\\.fq\\.gz") ~ str_match(base, "^.*_([12])\\.fq\\.gz")[,2],
+      str_detect(base, "\\.fastq\\.gz") ~ str_match(base, "^.*_R([12])_001*\\.fastq\\.gz")[,2],
+      TRUE ~ NA_character_
+    )
+  ) 
+
+```
+
+Now, because the naming of the files does not always have the lane, etc., and
+we want to machine name (not really necessary, but we can get it easily from
+the first line of each file), I make a file that has that info that we can join
+onto the path:
+
+```sh
+for i in data/*/*/*.gz; do zcat $i | awk -v f=$i 'BEGIN {OFS="\t"} NR==1 {print f, $1; exit}'; done | awk '!/Undetermined/' > example-configs/LOSH-Apr-24/prep/seq-tags-per-path.tsv
+```
+The results of that have been put into:
+```
+example-configs/LOSH-Apr-24/prep/seq-tags-per-path.tsv
+```
+And we can make it nice like this:
+```{r}
+seq_ids <- read_tsv("seq-tags-per-path.tsv", col_names = c("fq", "id")) %>%
+  separate(
+    id, 
+    into = c("x1", "x2", "flowcell", "lane"), 
+    sep = ":", 
+    extra = "drop"
+  ) %>%
+  select(-x1, -x2) %>%
+  mutate(platform = "ILLUMINA")
+```
+
+And we can now join those and pivot them to get fq1 fq2 kb1 and kb2 all on the same
+line, and then assign the correct BGP_IDs to each sample
+
+```{r}
+files_wide <- files %>%
+  left_join(seq_ids, by = "fq") %>%
+  select(-base) %>%
+  pivot_wider(
+    values_from = c(fq, kb),
+    names_from = read,
+    names_sep = ""
+  ) %>%
+  arrange(sample_id, flowcell, lane) %>%
+  mutate(
+    sample_id = ifelse(substr(sample_id, 1, 9) == "LOSH_001_", gsub("^LOSH_001_", "", sample_id), sample_id),
+    sample = sample_id, # make this easy and call sample the BGP_ID
+    .before = sample_id
+    
+  )
+```
+
+Check which birds were done on Plate1 and Plate2:
+
+```{r}
+check_plates <- files_wide %>%
+  mutate(
+    plate = case_when(
+      str_detect(fq1, "Plate1") ~ 1L,
+      str_detect(fq1, "Plate2") ~ 2L,
+      TRUE ~ NA_integer_
+    ),
+    .after = sample
+  ) %>%
+  group_by(sample, sample_id) %>%
+  summarise(plate_str = paste(plate, collapse = ",")) %>%
+  ungroup()
+```
+
+And now we can count the configurations:
+```{r}
+check_plates %>%
+  count(plate_str)
+```
+
+In the first sequencing run of Eastern Loggerhead Shrikes, birds were sequenced on Plate 1 & 2. In an additional run, 40 some birds from IN were sequenced at high depth (approaching 20x cov) on another plate. We are calling that Plate 4. Plate 3 contains wintering birds from TX so we are not including them in the breeding genoscape run.
+
+At any rate, our different libraries will be Plate1, Plate2,
+and Plate4. We make a data frame to join:
+
+```{r}
+lib_tib <- check_plates %>%
+  select(sample, plate_str) %>%
+  mutate(
+    library = case_when(
+      plate_str == "1" ~ "Plate1",
+      plate_str %in% c("2,2", "2,2,NA") ~ "Plate2",
+      plate_str == "NA" ~ "Plate4",
+      TRUE ~ NA_character_
+    )
+  )
+```
+
+So, now we can make our units file. For barcodes I am going to do the
+sample_id + library.  It just needs to be unique for those.
+```{r}
+units_all <- files_wide %>%
+  mutate(
+    library = case_when(
+      str_detect(fq1, "Plate1") ~ "Plate1",
+      str_detect(fq1, "Plate2") ~ "Plate2",
+      str_detect(fq1, "Plate4") ~ "Plate4"
+    ),
+    .after = sample
+  ) %>%
+  group_by(sample) %>%
+  mutate(unit = 1:n(), .after = sample) %>%
+  ungroup() %>%
+  mutate(
+    barcode = str_c(sample, sample_id, library, sep = "-")
+  ) %>%
+  select(sample, unit, library, flowcell, platform, lane, sample_id, barcode, fq1, fq2, kb1, kb2)
+```
+
+In the previous run, we identified 4 low coverage individuals to remove. Let's remove those birds now.
+
+Here is the one that we will be tossing:
+```{r}
+units_all %>%
+  filter(sample_id %in% c("22N13855", "22N13833", "22N13828", "22N13592"))
+```
+
+So, let's do that:
+```{r}
+units <- units_all %>%
+  filter(!(sample_id %in% c("22N13855", "22N13833", "22N13828", "22N13592")))
+```
+
+And, finally, we write that out:
+```{r}
+write_tsv(units, file = "units.tsv")
+```
+
+## Getting the reference genome
+
+Once I had the reference genome, I needed to change the formatting of the chromosome and scaffold group names, which contains = and ; characters. Convert to dashes using this command
+
+```sh
+sed 's/[;=]/-/g' resources/genome.fasta
+```
+
+Now you can index the reference genome this way:
+
+```sh
+samtools faidx resources/genome.fasta
+```
+## Making chromosomes and scaffold groups
+
+We do this with R.  As always, it is important to look at the format
+in `.test/chromosomes.tsv` and `.test/scaffold_groups.tsv` to know the format.
+
+```{r}
+# as I did before, we will let anything over 30 Mb be a "chromosome" and then
+# we will shoot for scaffold groups < 50 Mb in total.
+fai <- read_tsv(
+  "genome.fasta.fai", col_names = c("chrom", "len", "x1", "x2", "x3")) %>%
+  select(-starts_with("x")) %>%
+  mutate(cumlen = cumsum(len))
+
+# here are the lengths:
+fai %>%
+  mutate(x = 1:n()) %>%
+  ggplot(aes(x=x, y = len)) + geom_col()
+
+fai
+
+```
+Proceeding:
+```{r}
+chromos <- fai %>%
+  filter(len >= 4e6) %>%
+  rename(num_bases = len) %>%
+  select(-cumlen)
+
+write_tsv(chromos, file = "chromosomes.tsv")
+
+ # now, get the scaff groups
+ scaffs <- fai %>%
+   filter(len < 4e6)
+
+# bin_length <- 3e06
+# 
+# scaff_groups <- scaffs %>%
+#   mutate(
+#     cumul = cumsum(len),
+#     part = as.integer(cumul / bin_length) + 1L
+#   ) %>%
+#   mutate(
+#     id = sprintf("scaff_group_%03d", part),
+#     .before = chrom
+#   ) %>%
+#   select(-part, -cumlen)
+
+# # let's just see the total lengths of those scaff_groups
+# # and also the number of scaffolds in each
+# scaff_groups %>%
+#   group_by(id) %>%
+#   summarise(
+#     tot_bp = sum(len),
+#     num_scaff = n()
+#   )
+
+# Assign scaffold groups by number of scaffolds per group
+
+# Calculate mean chromosome length
+mean_cl <- mean(chromos$num_bases)
+
+# Set a bin size for each scaffold group
+bin_length <- 30
+
+# Assign scaffolds to groups and label each group with an ID number
+scaff_groups <- scaffs %>%
+  mutate(id = sprintf("scaffold_group%03d", floor((row_number() - 1) / bin_length) + 1)) %>% 
+  select(id, everything()) #Move id before chrom
+
+# Summarize scaffold groups
+scaff_groups %>%
+  group_by(id) %>%
+  summarise(
+    num_bases = sum(len),
+    num_scaffolds = n())
+```
+
+Good, that is not too many scaffold groups, and also not too many scaffolds per any one group.
+
+```{r}
+write_tsv(scaff_groups, file = "scaffold_groups.tsv")
+```
+
+
+After I created these configs, I updated the paths to them in my config.yaml file and set scatter_intervals_file: "" in my config file, and then ran this command:
+```sh
+snakemake --cores 1 --use-conda results/scatter_config/scatters_50000000.tsv --configfile example-configs/LOSH-Apr-24/config.yaml
+```
+This step created the file results/scatter_config/scatters_XXXXXXX.tsv, after which I copied it to my config directory and gave the path to it in the scatter_intervals_file: line in my config.yaml

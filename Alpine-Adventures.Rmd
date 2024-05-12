@@ -1,0 +1,171 @@
+---
+title: "Alpine-Adventures"
+author: "Holden"
+date: "2024-05-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This is my version of Eric's Running-On-Alpine document, which serves as a log of my April 2024 of LOSH novoseq data.
+
+Snakemake version 8.5.3
+
+First things first I retrieved the raw fastqs from ovis and placed them in data/fastqs/LCWG_Novoseq_LOSH_Plate1, data/fastqs/LCWG_Novoseq_LOSH_Plate2, and data/fastqs/LCWG_Novoseq_LOSH_Plate4_Indiana using rsync or scp
+
+Run this command from the sending server (ovis)
+```sh
+rsync -avn foxhol@ovis.biology.colostate.edu:/home/BGP_Data_Share/LCWG_raw_data/LOSH/LCWG_Novoseq_LOSH_Plate1 foxhol@colostate.edu@login.rc.colorado.edu:/scratch/alpine/foxhol@colostate.edu/LOSH/mega-non-model-wgs-snakeflow/data/fastqs
+```
+Repeat for LCWG_Novoseq_LOSH_Plate1 & LCWG_Novoseq_LOSH_Plate4_Indiana. I also removed the nested directories inside these folders from the sequencer on alpine so that the raw fastqs were in the top level of the LCWG_Novoseq_LOSH_Plate directory.
+
+I document the config prep in the file example-configs/LOSH-Apr-24/prep/prep-configs.Rmd. See for details.
+
+Done!! :)
+
+In order to get this workflow to run on alpine for LOSH, a couple of things needed to be changed right away. First off, I know from the previous step-by-step run of plates 1 & 2 that these samples should be downsampled to 5.0x. Because the IN birds were sequenced at high depth, we can set the downsampling to 5.0x in the config file. In order to call variants on the 5.0x downsampled bams right away, we can change a rule slightly.
+
+Navigate to workflow/rules/common.smk and find the rule get_bams_for_calling(wildcards).
+
+Change subd = "mkdup" on line 247 to subd = "downsample-5.0X/overlap_clipped" 
+
+Done!! :)
+
+Next I set up my hpcc profile for the resources I used in my step-by-step run of plates 1 & 2
+
+The memory requirements for the config.yaml file looked something like this:
+```
+set-threads:
+  map_reads: 10
+  genomics_db_import_chromosomes: 24
+  genomics_db_import_scaffold_groups: 24
+  genomics_db2vcf_scattered: 10
+set-resources:
+  map_reads:
+    mem_mb: 37400
+    time: "23:59:59"
+  genomics_db_import_chromosomes:
+    mem_mb: 89760
+    time: "23:59:59"
+  genomics_db_import_scaffold_groups:
+    mem_mb: 89760
+    time: "23:59:59"
+  genomics_db2vcf_scattered:
+    mem_mb: 37400
+    time: "23:59:59"
+```
+
+Put copied the chromosome level reference genome to resources/genome.fasta & resources/genome.fasta.fai
+
+Run snakemake in a tmux window using the command:
+
+snakemake -p --profile hpcc-profiles/slurm/alpine --configfile example-configs/LOSH-Apr-24/config.yaml
+
+This run failed due to trouble with the chromosome and scaffold names in the genome. The chromosome and scaffold names in the chromosomal level reference genome amy sent look like this...
+
+ScTjWWh_129;HRSCAF=223	
+ScTjWWh_149;HRSCAF=266
+
+Because snakemake does not like the ; and = symbols, I used the following sed command to replace those characters with -
+```sh
+sed 's/[;=]/-/g' resources/genome.fasta
+```
+
+Then reindexed the reference
+```sh
+mamba activate bioinf
+samtools faidx resources/genome.fasta
+```
+I also had to had to remake the scaffold_groups, chromosomes, and scatters file with the new fai file. While remaking the configs, I settled on a scaffold group size of 30 and ratched down the DBImport resources to 10 cores in my hpcc profile.
+
+Attempt number 2 failed during trimming due to 3 fastqs that were corrupted, so I retransferred them from ovis using scp.
+
+To print a list of the jobs that failed use this command. This gives prints a list of jobs that failed and directs you to the log file among other things
+```sh
+grep "Error in rule"  -A 11 $(ls -l .snakemake/log/*.log | tail -n 1 | awk '{print $NF}')
+```
+
+In the next attempt, the map_reads rule failed. 
+
+It didn't like time="23:59:59" in the profile. According to the logs interpreted through chat-gpt the time must be specified time="'23:59:59'" ???
+
+Try again!
+
+The mark_duplicates rule failed due to running out of memory. Only 39 completed. I upped the memory to 4 cores and more jobs completed. The remaining jobs ran out of memory again: 123 completed. Next I upped to 10 cores. I stopped getting out of memory errors and started getting no space on disk errors. Only 4 jobs left. I upped the memory requirements to 24 cores and only 1 left :)
+
+Apparently you can request more than 24 cores for a job says CH, who knew? I had to up the resources to 30 cores!!! But this was enough to get all my mark_duplicates jobs to complete. Yeehaw!!! I think that the high depth individuals from IN were the culprits here. Need more memory for those non-low-coverage sequences.
+
+Some overlap_clipped jobs failed. Upon looking at the logs, the program completes with warnings. To solve this, I navigated to the rule angsd-ready-bams, where I upped the pool size to 5 million using the --poolSize 5000000 and --poolSkipClip flags
+
+Try again!
+
+This time it ran up to downsampling. In thin_bams, samtools does not recognize -o option for samtools index. This is because of an old samtools version (1.15). I ended up not changing the code, but changed the samtools verison to version 1.19, by editing the the snakemake/env/samtools.yaml file to require the the latest version.
+
+I added the --rerun-triggers mtime flag in my snakemake command to keep snakemake from rerunning jobs up to this point. #later CH told me that this flag is in the hpcc profile, so this might not be necessary.
+
+Try again!
+
+This run ran up to the rule make_gvcf_sections. For the jobs that failed, I do not get an out of memory error, but I do get this in the error message among other things 'NativeLibraryLoader - Unable to load libgkl_compression.so from native/libgkl_compression.so (No space left on device)' which leads me to believe it is memory related. I had a similar non-OOM failure with mark_duplicates that was fixed by increasing the memory.
+
+Quick sidebar, you can use the following command to see how the job failed. OOM = out of memory (replace slurm_job_id with your job id)
+```sh
+sacct -j slurm_job_id
+```
+
+So I doubled the number of requested cores from 8 to 16 and most of the 1700 jobs (out of 37000) that had previously failed completed. Still, quite a few jobs failed. 
+
+After increasing the memory requirements to 24 cores, All make_gvcf_sections jobs completed!! and I believe all subsequent jobs completed by this point. :)
+
+
+I am pretty sure none of my jobs required 24hrs, so you could probably drop the time requirements to 8:00:00 or 12:00:00
+
+
+Now you have a complete bcf file. Located in results/bqsr-round-0/bcf The final output is the pass-0.05-maf.bcf and the pass-0.01-maf.bcf
+
+I used bcftools view to convert to a vcf
+```sh
+bcftools view pass-maf-0.05.bcf | bgzip > pass-maf-0.05.vcf.gz
+```
+Use this command to see if you have the correct number of individuals. Remove the header in nano or open on demand if you have that up before counting the lines.
+```sh
+bcftools view pass-0.05-maf.vcf.gz | grep "CHROM" | tr "\t" "\n" > inds
+wc -l inds
+```
+Post bcf/vcf analysis
+
+Run ngsRelate & remove related individuals
+
+Use vcf tools to filter the merged vcf for 80 & 50% missingness and --min-alleles 2 --max-alleles 2
+
+After this completes you can create a pca with plink and read the .eigenvec file into R
+```sh
+mamba activate bioinf
+```
+(bioinf) [foxhol@colostate.edu@login11 bcf]$ plink --vcf pass-maf-0.05-SNP-8miss.recode.vcf --out pass-maf-0.05-SNP-8miss --aec --pca 10 header tabs
+PLINK v1.90b6.21 64-bit (19 Oct 2020)          www.cog-genomics.org/plink/1.9/
+(C) 2005-2020 Shaun Purcell, Christopher Chang   GNU General Public License v3
+Logging to pass-maf-0.05-SNP-8miss.log.
+Options in effect:
+  --allow-extra-chr
+  --out pass-maf-0.05-SNP-8miss
+  --pca 10 header tabs
+  --vcf pass-maf-0.05-SNP-8miss.recode.vcf
+
+15884 MB RAM detected; reserving 7942 MB for main workspace.
+--vcf: pass-maf-0.05-SNP-8miss-temporary.bed +
+pass-maf-0.05-SNP-8miss-temporary.bim + pass-maf-0.05-SNP-8miss-temporary.fam
+written.
+155817 variants loaded from .bim file.
+239 people (0 males, 0 females, 239 ambiguous) loaded from .fam.
+Ambiguous sex IDs written to pass-maf-0.05-SNP-8miss.nosex .
+Using up to 8 threads (change this with --threads).
+Before main variant filters, 239 founders and 0 nonfounders present.
+Calculating allele frequencies... done.
+Total genotyping rate is 0.903094.
+155817 variants and 239 people pass filters and QC.
+Note: No phenotypes present.
+Relationship matrix calculation complete.
+--pca: Results saved to pass-maf-0.05-SNP-8miss.eigenval and
+pass-maf-0.05-SNP-8miss.eigenvec .
