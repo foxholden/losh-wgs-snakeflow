@@ -16,7 +16,7 @@ bcftools view pass-0.05-maf.vcf.gz | grep "CHROM" | tr "\t" "\n" > inds
 ```
 Make sure to remove the header in nano.
 
-Relatedness is measured using ngsRelate on Alpine using this [script](scripts/1.ngsRelate-vcf.sbatch).
+Relatedness is measured using ngsRelate on Alpine. Use this [script](scripts/1.ngsRelate-vcf.sbatch).
 
 Read the output into R and sort J8 values from highest to lowest. Then remove one individual from pairs with J8 > 0.2.
 
