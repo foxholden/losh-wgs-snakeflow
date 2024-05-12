@@ -37,15 +37,9 @@
 set -x
 
 source ~/.bashrc
-#conda activate bioinf
 
-#module load jdk/18.0.1.1
-#module load python/3.10.2
 module load htslib
 
-#FASTA="/scratch/alpine/foxhol@colostate.edu/LOSH/bash_scripts/resources/genomes/GCA_013397235.1_ASM1339723v1_genomic.fna"
-#BAM1="/scratch/alpine/foxhol@colostate.edu/LOSH/raw_data/LOSH_Novoseq_Lane1_dateX/bwa_mem"
-#COMMS="/scratch/alpine/foxhol@colostate.edu/LOSH/raw_data/LOSH_Novoseq_Lane1_dateX_bwa_mem/LOSH.4m.comm_lines.txt"
 NGSRELATE="/projects/foxhol@colostate.edu/ngsRelate"
 
 #-n = numindv, -z =  your ind file with sample names, -T = PT or GT for phenotype or genotype likelihoods, -p = threads
