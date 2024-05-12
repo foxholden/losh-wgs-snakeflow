@@ -10,8 +10,9 @@ Relatedness is measured using ngsRelate on Alpine using this [script](scripts/1.
 Post-vcf filtering is done with vcftools on Alpine using this [script](scripts/2.filtersnps-missing.sbatch)
 
 ## Population Structure
-A genomic PCA is made using Plink v. 1.9
+A genomic PCA is made using Plink v. 1.9. This commmand can be run on the login node or in acompile.
 ```
+mamba activate bioinf
 plink --vcf pass-maf-0.05-SNP-5miss.recode.vcf --out pass-maf-0.05-SNP-5miss --aec --pca 10 header tabs
 ```
-The resulting .egienvec file can be read into R to create a PCA
+The resulting .eigenvec file can be read into R to create a PCA
