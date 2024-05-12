@@ -53,5 +53,5 @@ gatk --java-options "-Xmx11g"  SelectVariants \
 
 conda activate bioinf
 #VCFtools for filtering based on missingness, once you remove systematic errors. Play around with this to get the numbers you want and make sense
-vcftools --vcf pass-maf-0.05-SNP.vcf --out pass-maf-0.05-SNP-8miss --max-missing 0.8 --recode
-vcftools --vcf pass-maf-0.05-SNP.vcf --out pass-maf-0.05-SNP-5miss --max-missing 0.5 --recode
+vcftools --vcf pass-maf-0.05-SNP.vcf --out pass-maf-0.05-SNP-8miss --max-missing 0.8  --min-alleles 2 --max-alleles 2 --recode
+vcftools --vcf pass-maf-0.05-SNP.vcf --out pass-maf-0.05-SNP-5miss --max-missing 0.5  --min-alleles 2 --max-alleles 2 --recode
