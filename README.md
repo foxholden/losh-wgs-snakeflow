@@ -6,19 +6,19 @@ The snakemake pipeline is adapted from eriq's mega-non-model-wgs-snakeflow that 
 
 ## Remove Related Individuals
 
-Convert bcf to vcf
+Convert bcf to vcf.
 ```
 bcftools view pass-maf-0.05.bcf | bgzip > pass-maf-0.05.vcf.gz
 ```
-Create an individual names file for ngsRelate
+Create an individual names file for ngsRelate.
 ```
 bcftools view pass-0.05-maf.vcf.gz | grep "CHROM" | tr "\t" "\n" > inds
 ```
-Make sure to remove the header in nano 
+Make sure to remove the header in nano.
 
 Relatedness is measured using ngsRelate on Alpine using this [script](scripts/1.ngsRelate-vcf.sbatch).
 
-Read the output into R and sort J8 values from highest to lowest. Then remove one individual from pairs with J8 > 0.2
+Read the output into R and sort J8 values from highest to lowest. Then remove one individual from pairs with J8 > 0.2.
 
 ## Filter SNPS and Missing Data
 Post-vcf filtering is done with vcftools on Alpine using this [script](scripts/2.filtersnps-missing.sbatch).
